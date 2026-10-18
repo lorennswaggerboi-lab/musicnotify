@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PS4 Music Notify</title>
+<meta name="description" content="Una tarjeta estilo PS4 con la carátula, el título y el artista cada vez que empieza una canción. Para Windows y Linux.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🎵%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --ink:#0a1226; --panel:#121b36; --line:#26325a;
+    --text:#eaf0ff; --muted:#a9b6d6; --blue:#0070d1; --blue-hi:#1a8bf0;
+    --acc:#8fb4ff;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    min-height:100vh; background:var(--ink); color:var(--text);
+    font-family:"Segoe UI","Ubuntu","Noto Sans",system-ui,sans-serif;
+    overflow-x:hidden;
+  }
+
+  /* El color de la canción de la demo tiñe el fondo */
+  .glow{
+    position:fixed; right:-160px; bottom:-200px; width:620px; height:620px;
+    border-radius:50%; background:var(--acc); opacity:.28; filter:blur(130px);
+    transition:background-color 1.2s ease; pointer-events:none;
+  }
+
+  /* Hero */
+  main{
+    position:relative; min-height:100vh; display:flex; align-items:center;
+    padding:190px 6vw 9vh;
+  }
+  .hero{max-width:44rem}
+  h1{
+    margin:0; font-size:clamp(2.7rem,8vw,5.8rem); line-height:.98;
+    font-weight:800; letter-spacing:-.035em;
+  }
+  .lead{
+    margin:1.6rem 0 0; max-width:34em; font-size:clamp(1.05rem,2.2vw,1.3rem);
+    line-height:1.55; color:var(--muted);
+  }
+  .by{margin:1.4rem 0 0; font-size:1.05rem; color:var(--text)}
+  .by b{font-weight:700}
+  .cta{margin-top:2.2rem; display:flex; align-items:center; gap:1.1rem; flex-wrap:wrap}
+  .btn{
+    font:inherit; font-size:1.2rem; font-weight:700; color:#fff; background:var(--blue);
+    border:0; border-radius:14px; padding:.95rem 2.4rem; cursor:pointer;
+    box-shadow:0 10px 30px -10px var(--blue); transition:background .15s, transform .15s;
+  }
+  .btn:hover{background:var(--blue-hi)}
+  .btn:active{transform:scale(.97)}
+  .note{color:var(--muted); font-size:.95rem}
+  :focus-visible{outline:3px solid #fff; outline-offset:3px}
+
+  /* Tarjeta de demostración: aparece donde aparece en la app real */
+  .toast{
+    position:fixed; top:24px; left:24px; z-index:5;
+    width:min(440px,calc(100vw - 32px)); height:108px; border-radius:24px;
+    display:flex; align-items:center; gap:16px; padding:0 22px 0 14px;
+    background:linear-gradient(90deg,rgba(8,10,16,.82),rgba(8,10,16,.6)), var(--cover);
+    border:2px solid color-mix(in srgb, var(--acc) 75%, transparent);
+    box-shadow:0 18px 50px -12px rgba(0,0,0,.7);
+    overflow:hidden; opacity:0; transform:translateX(-130%);
+  }
+  .toast.in{animation:enter .55s cubic-bezier(.3,1.35,.5,1) forwards}
+  .toast.out{animation:leave .45s ease-in forwards}
+  @keyframes enter{from{opacity:0;transform:translateX(-130%)} to{opacity:1;transform:none}}
+  @keyframes leave{from{opacity:1;transform:none} to{opacity:0;transform:translateX(-130%)}}
+  .cover{
+    flex:none; width:80px; height:80px; border-radius:16px; background:var(--cover);
+    border:1px solid rgba(255,255,255,.28);
+  }
+  .txt{min-width:0; flex:1}
+  .lab{font-size:.74rem; font-weight:700; color:var(--acc)}
+  .ttl{margin-top:.15rem; font-size:1.22rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .art{margin-top:.2rem; font-size:.95rem; color:#c3c9d6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .eq{flex:none; display:flex; align-items:flex-end; gap:4px; height:28px}
+  .eq i{width:5px; height:100%; border-radius:2px; background:var(--acc); transform-origin:bottom; animation:eq 1s ease-in-out infinite alternate}
+  .eq i:nth-child(2){animation-duration:.7s} .eq i:nth-child(3){animation-duration:1.2s} .eq i:nth-child(4){animation-duration:.85s}
+  @keyframes eq{from{transform:scaleY(.2)} to{transform:scaleY(1)}}
+  .bar{position:absolute; left:28px; right:28px; bottom:8px; height:2px; background:var(--acc); transform-origin:left}
+  .toast.in .bar{animation:drain 5s linear forwards}
+  @keyframes drain{from{transform:scaleX(1)} to{transform:scaleX(0)}}
+
+  /* Ventana de descarga */
+  dialog{
+    width:min(600px,92vw); padding:30px; color:var(--text);
+    background:var(--panel); border:1px solid var(--line); border-radius:22px;
+    box-shadow:0 30px 80px -20px #000;
+  }
+  dialog[open]{animation:pop .22s ease-out}
+  dialog::backdrop{background:rgba(4,8,20,.7); backdrop-filter:blur(3px)}
+  @keyframes pop{from{opacity:0; transform:translateY(12px) scale(.97)} to{opacity:1; transform:none}}
+  dialog h2{margin:0 0 .35rem; font-size:1.6rem; letter-spacing:-.02em}
+  dialog p{margin:0 0 1.4rem; color:var(--muted)}
+  .opts{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  .opt{
+    display:block; padding:20px; border-radius:16px; text-decoration:none; color:var(--text);
+    background:var(--ink); border:1px solid var(--line); transition:border-color .15s, background .15s;
+  }
+  .opt:hover{border-color:var(--blue-hi); background:#0d1a3a}
+  .opt strong{display:block; font-size:1.3rem}
+  .opt small{display:block; margin-top:.35rem; color:var(--muted); font-size:.88rem; line-height:1.45}
+  .opt code{display:block; margin-top:.8rem; font-size:.78rem; color:var(--acc); word-break:break-all}
+  .close{
+    margin-top:1.3rem; font:inherit; color:var(--muted); background:none; border:0;
+    padding:.4rem 0; cursor:pointer; text-decoration:underline; text-underline-offset:3px;
+  }
+  .close:hover{color:var(--text)}
+
+  @media (max-width:560px){
+    .opts{grid-template-columns:1fr}
+    main{padding-top:170px}
+    .eq{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .toast.in,.toast.out{animation:none}
+    .toast.in{opacity:1; transform:none}
+    .eq i,.toast.in .bar,dialog[open]{animation:none}
+    .glow{transition:none}
+  }
+</style>
+</head>
+<body>
+
+<div class="glow" aria-hidden="true"></div>
+
+<div class="toast" id="toast" aria-hidden="true">
+  <div class="cover"></div>
+  <div class="txt">
+    <div class="lab">Reproduciendo ahora</div>
+    <div class="ttl" id="t-title"></div>
+    <div class="art" id="t-artist"></div>
+  </div>
+  <div class="eq"><i></i><i></i><i></i><i></i></div>
+  <div class="bar"></div>
+</div>
+
+<main>
+  <section class="hero">
+    <h1>PS4 Music Notify</h1>
+    <p class="lead">
+      Cada vez que empieza una canción, aparece arriba a la izquierda una tarjeta con la carátula,
+      el título y el artista, igual que las notificaciones de la PS4. Funciona con Spotify,
+      YouTube y cualquier reproductor de tu computadora.
+    </p>
+    <p class="by">By <b>lorennsw</b></p>
+    <div class="cta">
+      <button class="btn" id="open">Download</button>
+      <span class="note">Gratis, para Windows y Linux.</span>
+    </div>
+  </section>
+</main>
+
+<dialog id="dlg" aria-labelledby="dlg-title">
+  <h2 id="dlg-title">¿Para qué sistema lo querés?</h2>
+  <p>Elegí el tuyo y empieza la descarga.</p>
+  <div class="opts">
+    <a class="opt" href="PS4-Music-Notify-Windows.zip" download>
+      <strong>Windows</strong>
+      <small>Extraé el zip y hacé doble clic en el instalador.</small>
+      <code>PS4-Music-Notify-Windows.zip</code>
+    </a>
+    <a class="opt" href="ps4-music-notify_1.0.0_all.deb" download>
+      <strong>Linux</strong>
+      <small>Para Ubuntu, Debian y Mint. Doble clic al archivo y tocá Instalar.</small>
+      <code>ps4-music-notify_1.0.0_all.deb</code>
+    </a>
+  </div>
+  <button class="close" id="close">Cerrar</button>
+</dialog>
+
+<script>
+  // Ventana de descarga
+  const dlg = document.getElementById('dlg');
+  document.getElementById('open').addEventListener('click', () => dlg.showModal());
+  document.getElementById('close').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+
+  // Demostración: la tarjeta entra, se queda 5 s, sale, y pasa a la siguiente canción
+  const tracks = [
+    {t:'Get Lucky',       a:'Daft Punk',             c:'linear-gradient(135deg,#3b4cc0,#e0a030)', acc:'#8fb4ff'},
+    {t:'Blinding Lights', a:'The Weeknd',            c:'linear-gradient(135deg,#c81e3c,#5a1a6a)', acc:'#ff6b86'},
+    {t:'Sunflower',       a:'Post Malone, Swae Lee', c:'linear-gradient(135deg,#16a05c,#2c5a8a)', acc:'#5fe0a2'}
+  ];
+  const toast = document.getElementById('toast');
+  const root = document.documentElement.style;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function play(i) {
+    const k = tracks[i % tracks.length];
+    document.getElementById('t-title').textContent = k.t;
+    document.getElementById('t-artist').textContent = k.a;
+    root.setProperty('--acc', k.acc);
+    toast.style.setProperty('--cover', k.c);
+    toast.classList.remove('out', 'in');
+    void toast.offsetWidth;
+    toast.classList.add('in');
+    if (still) return;
+    setTimeout(() => { toast.classList.remove('in'); toast.classList.add('out'); }, 5000);
+    setTimeout(() => play(i + 1), 6600);
+  }
+  setTimeout(() => play(0), 500);
+</script>
+</body>
+</html>
